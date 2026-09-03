@@ -1,0 +1,1032 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Reel Pipeline</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
+
+  :root {
+    --bg: #0c0c0e;
+    --surface: #151518;
+    --surface-2: #1c1c21;
+    --surface-3: #232329;
+    --border: #2a2a32;
+    --border-hover: #3a3a45;
+    --text: #e8e8ec;
+    --text-2: #9898a4;
+    --text-3: #6a6a78;
+    --accent: #6c5ce7;
+    --accent-glow: rgba(108, 92, 231, 0.15);
+    --green: #00d48a;
+    --green-glow: rgba(0, 212, 138, 0.1);
+    --orange: #ff9f43;
+    --red: #ff6b6b;
+    --blue: #54a0ff;
+    --radius: 10px;
+    --radius-sm: 6px;
+    --mono: 'JetBrains Mono', monospace;
+    --sans: 'Plus Jakarta Sans', -apple-system, sans-serif;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: var(--sans);
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* ── Layout ─────────────────────────────── */
+  .app {
+    display: grid;
+    grid-template-columns: 280px 1fr;
+    min-height: 100vh;
+  }
+
+  /* ── Sidebar ────────────────────────────── */
+  .sidebar {
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    padding: 0;
+    overflow: hidden;
+  }
+
+  .sidebar-header {
+    padding: 24px 20px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+
+  .logo-icon {
+    width: 32px;
+    height: 32px;
+    background: linear-gradient(135deg, var(--accent), #a855f7);
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+  }
+
+  .logo-text {
+    font-weight: 700;
+    font-size: 15px;
+    letter-spacing: -0.3px;
+  }
+
+  .logo-text span {
+    color: var(--text-3);
+    font-weight: 400;
+    font-size: 12px;
+    display: block;
+    margin-top: 1px;
+  }
+
+  .new-project-btn {
+    width: 100%;
+    padding: 10px;
+    background: var(--accent);
+    color: white;
+    border: none;
+    border-radius: var(--radius-sm);
+    font-family: var(--sans);
+    font-weight: 600;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.15s;
+    letter-spacing: -0.2px;
+  }
+
+  .new-project-btn:hover {
+    background: #7c6cf7;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 20px var(--accent-glow);
+  }
+
+  .project-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px;
+  }
+
+  .project-item {
+    padding: 12px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: all 0.1s;
+    margin-bottom: 2px;
+    border: 1px solid transparent;
+  }
+
+  .project-item:hover { background: var(--surface-2); }
+  .project-item.active {
+    background: var(--surface-2);
+    border-color: var(--border);
+  }
+
+  .project-item-name {
+    font-weight: 600;
+    font-size: 13px;
+    margin-bottom: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .project-item-meta {
+    font-size: 11px;
+    color: var(--text-3);
+    font-family: var(--mono);
+  }
+
+  .status-dot {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    margin-right: 5px;
+    vertical-align: middle;
+  }
+
+  .status-dot.new { background: var(--text-3); }
+  .status-dot.downloading { background: var(--orange); animation: pulse 1s infinite; }
+  .status-dot.downloaded { background: var(--blue); }
+  .status-dot.frames_extracted, .status-dot.frame_selected { background: var(--accent); }
+  .status-dot.swapped { background: var(--orange); }
+  .status-dot.complete { background: var(--green); }
+  .status-dot.download_failed { background: var(--red); }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+
+  /* ── Main Content ───────────────────────── */
+  .main {
+    overflow-y: auto;
+    padding: 32px 40px;
+  }
+
+  /* ── Empty State ────────────────────────── */
+  .empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 70vh;
+    color: var(--text-3);
+    text-align: center;
+  }
+
+  .empty-icon {
+    font-size: 48px;
+    margin-bottom: 16px;
+    opacity: 0.3;
+  }
+
+  .empty-state h2 {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text-2);
+    margin-bottom: 6px;
+  }
+
+  .empty-state p {
+    font-size: 13px;
+    max-width: 300px;
+  }
+
+  /* ── New Project Modal ──────────────────── */
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(8px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    animation: fadeIn 0.15s;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
+  .modal {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 28px;
+    width: 440px;
+    box-shadow: 0 24px 80px rgba(0,0,0,0.5);
+    animation: slideUp 0.2s;
+  }
+
+  @keyframes slideUp {
+    from { transform: translateY(10px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+  }
+
+  .modal h2 {
+    font-size: 16px;
+    font-weight: 700;
+    margin-bottom: 20px;
+    letter-spacing: -0.3px;
+  }
+
+  .field {
+    margin-bottom: 14px;
+  }
+
+  .field label {
+    display: block;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-2);
+    margin-bottom: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .field input {
+    width: 100%;
+    padding: 10px 12px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 13px;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+
+  .field input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-glow);
+  }
+
+  .field input::placeholder { color: var(--text-3); }
+
+  .modal-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+    margin-top: 20px;
+  }
+
+  .btn {
+    padding: 9px 18px;
+    border: none;
+    border-radius: var(--radius-sm);
+    font-family: var(--sans);
+    font-weight: 600;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .btn-ghost {
+    background: transparent;
+    color: var(--text-2);
+    border: 1px solid var(--border);
+  }
+
+  .btn-ghost:hover { background: var(--surface-2); color: var(--text); }
+
+  .btn-primary {
+    background: var(--accent);
+    color: white;
+  }
+
+  .btn-primary:hover {
+    background: #7c6cf7;
+    box-shadow: 0 4px 20px var(--accent-glow);
+  }
+
+  .btn-primary:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  .btn-sm {
+    padding: 6px 12px;
+    font-size: 12px;
+  }
+
+  .btn-green { background: var(--green); color: #000; }
+  .btn-green:hover { background: #00e896; }
+
+  .btn-orange { background: var(--orange); color: #000; }
+  .btn-blue { background: var(--blue); color: #000; }
+
+  .btn-danger { background: transparent; color: var(--red); border: 1px solid var(--red); }
+  .btn-danger:hover { background: rgba(255, 107, 107, 0.1); }
+
+  /* ── Project Detail ─────────────────────── */
+  .project-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 32px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .project-header h1 {
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+  }
+
+  .project-header-url {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text-3);
+    margin-top: 4px;
+    max-width: 400px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .project-actions {
+    display: flex;
+    gap: 8px;
+  }
+
+  /* ── Pipeline Steps ─────────────────────── */
+  .pipeline {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  .step {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    transition: border-color 0.2s;
+  }
+
+  .step.active { border-color: var(--accent); }
+  .step.done { border-color: var(--green); }
+
+  .step-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 20px;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .step-header:hover { background: var(--surface-2); }
+
+  .step-label {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .step-number {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: var(--surface-3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text-3);
+    flex-shrink: 0;
+  }
+
+  .step.active .step-number { background: var(--accent); color: white; }
+  .step.done .step-number { background: var(--green); color: #000; }
+
+  .step-title {
+    font-weight: 600;
+    font-size: 14px;
+    letter-spacing: -0.2px;
+  }
+
+  .step-subtitle {
+    font-size: 12px;
+    color: var(--text-3);
+    margin-top: 2px;
+  }
+
+  .step-body {
+    padding: 0 20px 20px;
+  }
+
+  /* ── Frame Grid ─────────────────────────── */
+  .frame-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 10px;
+    margin-top: 12px;
+  }
+
+  .frame-card {
+    position: relative;
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+    cursor: pointer;
+    border: 2px solid transparent;
+    transition: all 0.15s;
+    aspect-ratio: 9/16;
+    background: var(--surface-2);
+  }
+
+  .frame-card:hover { border-color: var(--border-hover); transform: translateY(-2px); }
+  .frame-card.selected { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+
+  .frame-card img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .frame-card-label {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 4px 8px;
+    background: rgba(0,0,0,0.7);
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text-2);
+    text-align: center;
+  }
+
+  .frame-card.selected .frame-card-label {
+    background: var(--accent);
+    color: white;
+  }
+
+  /* ── Drop Zone ──────────────────────────── */
+  .drop-zone {
+    border: 2px dashed var(--border);
+    border-radius: var(--radius);
+    padding: 32px;
+    text-align: center;
+    color: var(--text-3);
+    cursor: pointer;
+    transition: all 0.2s;
+    margin-top: 12px;
+  }
+
+  .drop-zone:hover, .drop-zone.dragover {
+    border-color: var(--accent);
+    background: var(--accent-glow);
+    color: var(--text-2);
+  }
+
+  .drop-zone-icon {
+    font-size: 28px;
+    margin-bottom: 8px;
+    opacity: 0.5;
+  }
+
+  .drop-zone p {
+    font-size: 13px;
+    font-weight: 500;
+  }
+
+  .drop-zone small {
+    font-size: 11px;
+    display: block;
+    margin-top: 4px;
+  }
+
+  /* ── File List ──────────────────────────── */
+  .file-list {
+    margin-top: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .file-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    background: var(--surface-2);
+    border-radius: var(--radius-sm);
+    font-size: 13px;
+  }
+
+  .file-item-icon { opacity: 0.5; }
+  .file-item-name { flex: 1; font-family: var(--mono); font-size: 12px; }
+  .file-item-size { color: var(--text-3); font-family: var(--mono); font-size: 11px; }
+
+  /* ── Loading ────────────────────────────── */
+  .spinner {
+    width: 16px;
+    height: 16px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+    display: inline-block;
+    vertical-align: middle;
+    margin-right: 8px;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  .loading-text {
+    font-size: 13px;
+    color: var(--text-2);
+    padding: 12px 0;
+  }
+
+  /* ── Scrollbar ──────────────────────────── */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--border-hover); }
+
+  /* ── Toasts ─────────────────────────────── */
+  .toast-container {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    z-index: 200;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .toast {
+    padding: 12px 16px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    font-size: 13px;
+    box-shadow: 0 8px 30px rgba(0,0,0,0.4);
+    animation: slideIn 0.2s;
+    max-width: 350px;
+  }
+
+  .toast.error { border-color: var(--red); color: var(--red); }
+  .toast.success { border-color: var(--green); }
+
+  @keyframes slideIn {
+    from { transform: translateX(20px); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+  }
+
+  /* ── Image Preview ──────────────────────── */
+  .preview-row {
+    display: flex;
+    gap: 12px;
+    margin-top: 12px;
+    flex-wrap: wrap;
+  }
+
+  .preview-thumb {
+    width: 100px;
+    height: 140px;
+    object-fit: cover;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+  }
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <!-- Sidebar -->
+  <div class="sidebar">
+    <div class="sidebar-header">
+      <div class="logo">
+        <div class="logo-icon">◆</div>
+        <div class="logo-text">Reel Pipeline<span>AI Content Workflow</span></div>
+      </div>
+      <button class="new-project-btn" onclick="showNewProjectModal()">+ New Project</button>
+    </div>
+    <div class="project-list" id="projectList"></div>
+  </div>
+
+  <!-- Main Content -->
+  <div class="main" id="mainContent">
+    <div class="empty-state">
+      <div class="empty-icon">◆</div>
+      <h2>No project selected</h2>
+      <p>Create a new project by pasting a reel URL, or select an existing one from the sidebar.</p>
+    </div>
+  </div>
+</div>
+
+<!-- Toast Container -->
+<div class="toast-container" id="toasts"></div>
+
+<script>
+// ── State ────────────────────────────────────────────────────────
+let projects = [];
+let activeProjectId = null;
+let activeProject = null;
+
+// ── API Helpers ──────────────────────────────────────────────────
+async function api(path, opts = {}) {
+  const res = await fetch(`/api${path}`, {
+    headers: { 'Content-Type': 'application/json', ...opts.headers },
+    ...opts,
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: 'Request failed' }));
+    throw new Error(err.error || err.details || 'Request failed');
+  }
+  return res.json();
+}
+
+function toast(msg, type = 'info') {
+  const el = document.createElement('div');
+  el.className = `toast ${type}`;
+  el.textContent = msg;
+  document.getElementById('toasts').appendChild(el);
+  setTimeout(() => el.remove(), 4000);
+}
+
+function formatBytes(b) {
+  if (b < 1024) return b + ' B';
+  if (b < 1024 * 1024) return (b / 1024).toFixed(1) + ' KB';
+  return (b / (1024 * 1024)).toFixed(1) + ' MB';
+}
+
+// ── Load Projects ────────────────────────────────────────────────
+async function loadProjects() {
+  projects = await api('/projects');
+  renderProjectList();
+}
+
+function renderProjectList() {
+  const el = document.getElementById('projectList');
+  if (!projects.length) {
+    el.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-3);font-size:12px;">No projects yet</div>';
+    return;
+  }
+  el.innerHTML = projects.map(p => `
+    <div class="project-item ${p.id === activeProjectId ? 'active' : ''}"
+         onclick="selectProject('${p.id}')">
+      <div class="project-item-name">${esc(p.name)}</div>
+      <div class="project-item-meta">
+        <span class="status-dot ${p.status}"></span>${p.status.replace(/_/g, ' ')}
+      </div>
+    </div>
+  `).join('');
+}
+
+// ── New Project Modal ────────────────────────────────────────────
+function showNewProjectModal() {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.id = 'modalOverlay';
+  overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+  overlay.innerHTML = `
+    <div class="modal">
+      <h2>New Reel Project</h2>
+      <div class="field">
+        <label>Reel URL</label>
+        <input type="text" id="modalUrl" placeholder="https://www.instagram.com/reel/..." autofocus />
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" onclick="document.getElementById('modalOverlay').remove()">Cancel</button>
+        <button class="btn btn-primary" onclick="createProject()">Create & Download</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  setTimeout(() => document.getElementById('modalUrl').focus(), 50);
+
+  // Enter key
+  overlay.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') createProject();
+    if (e.key === 'Escape') overlay.remove();
+  });
+}
+
+async function createProject() {
+  const url = document.getElementById('modalUrl').value.trim();
+  if (!url) return toast('Paste a reel URL', 'error');
+
+  document.getElementById('modalOverlay').remove();
+
+  try {
+    const p = await api('/projects', {
+      method: 'POST',
+      body: JSON.stringify({ url }),
+    });
+    toast('Project created');
+    await loadProjects();
+    await selectProject(p.id);
+    // Auto-start download
+    await downloadReel(p.id);
+  } catch (e) {
+    toast(e.message, 'error');
+  }
+}
+
+// ── Select & Render Project ──────────────────────────────────────
+async function selectProject(id) {
+  activeProjectId = id;
+  try {
+    activeProject = await api(`/projects/${id}/files`);
+    renderProject();
+    renderProjectList();
+  } catch (e) {
+    toast(e.message, 'error');
+  }
+}
+
+async function refreshProject() {
+  if (activeProjectId) await selectProject(activeProjectId);
+}
+
+function renderProject() {
+  const p = activeProject;
+  const meta = p.meta;
+  const main = document.getElementById('mainContent');
+
+  const hasVideo = p.source.length > 0;
+  const hasFrames = p.frames.filter(f => !f.name.startsWith('SELECTED')).length > 0;
+  const hasSwapped = p.swapped.length > 0;
+  const hasFinal = p.final.length > 0;
+
+  const statusOrder = ['new', 'downloading', 'downloaded', 'frames_extracted', 'frame_selected', 'swapped', 'complete'];
+  const si = statusOrder.indexOf(meta.status);
+
+  main.innerHTML = `
+    <div class="project-header">
+      <div>
+        <h1>${esc(meta.name)}</h1>
+        <div class="project-header-url">${esc(meta.url)}</div>
+      </div>
+      <div class="project-actions">
+        <button class="btn btn-sm btn-ghost" onclick="openFolder('')">Open in Finder</button>
+        <button class="btn btn-sm btn-danger" onclick="deleteProject()">Delete</button>
+      </div>
+    </div>
+
+    <div class="pipeline">
+      <!-- Step 1: Download -->
+      <div class="step ${si >= 2 ? 'done' : si >= 1 ? 'active' : ''}">
+        <div class="step-header" onclick="toggleStep(this)">
+          <div class="step-label">
+            <div class="step-number">1</div>
+            <div>
+              <div class="step-title">Download Reel</div>
+              <div class="step-subtitle">${hasVideo ? p.source[0].name + ' · ' + formatBytes(p.source[0].size) : 'Paste URL and download'}</div>
+            </div>
+          </div>
+          ${!hasVideo ? '<button class="btn btn-sm btn-primary" onclick="event.stopPropagation();downloadReel()">Download</button>' : '<button class="btn btn-sm btn-ghost" onclick="event.stopPropagation();openFolder(\'source\')">Show</button>'}
+        </div>
+      </div>
+
+      <!-- Step 2: Extract Frames -->
+      <div class="step ${si >= 3 ? 'done' : (si >= 2 && hasVideo) ? 'active' : ''}">
+        <div class="step-header" onclick="toggleStep(this)">
+          <div class="step-label">
+            <div class="step-number">2</div>
+            <div>
+              <div class="step-title">Extract Frames</div>
+              <div class="step-subtitle">${hasFrames ? p.frames.filter(f=>!f.name.startsWith('SELECTED')).length + ' frames extracted' : 'Pick the best reference frame'}</div>
+            </div>
+          </div>
+          ${hasVideo && !hasFrames ? '<button class="btn btn-sm btn-primary" onclick="event.stopPropagation();extractFrames()">Extract</button>' : ''}
+        </div>
+        ${hasFrames || (hasVideo && !hasFrames) ? `<div class="step-body" id="framesBody">
+          ${hasFrames ? renderFrameGrid() : ''}
+          ${hasFrames && meta.selected_frame ? `<div style="margin-top:12px;display:flex;gap:8px;">
+            <button class="btn btn-sm btn-green" onclick="openFrame()">Open in Preview</button>
+            <button class="btn btn-sm btn-ghost" onclick="openFolder('frames')">Show Folder</button>
+          </div>` : ''}
+        </div>` : ''}
+      </div>
+
+      <!-- Step 3: Upload Swapped Image -->
+      <div class="step ${si >= 5 ? 'done' : si >= 3 ? 'active' : ''}">
+        <div class="step-header" onclick="toggleStep(this)">
+          <div class="step-label">
+            <div class="step-number">3</div>
+            <div>
+              <div class="step-title">Swapped Image</div>
+              <div class="step-subtitle">${hasSwapped ? p.swapped[0].name : 'Drop your Higgsfield output here'}</div>
+            </div>
+          </div>
+          ${hasSwapped ? '<button class="btn btn-sm btn-ghost" onclick="event.stopPropagation();openFolder(\'swapped\')">Show</button>' : ''}
+        </div>
+        <div class="step-body">
+          ${!hasSwapped ? renderDropZone('swapped', 'Drop swapped image from Higgsfield', 'PNG, JPG, WEBP') : renderFilePreview('swapped', p.swapped)}
+        </div>
+      </div>
+
+      <!-- Step 4: Final Output -->
+      <div class="step ${si >= 6 ? 'done' : si >= 5 ? 'active' : ''}">
+        <div class="step-header" onclick="toggleStep(this)">
+          <div class="step-label">
+            <div class="step-number">4</div>
+            <div>
+              <div class="step-title">Final Video</div>
+              <div class="step-subtitle">${hasFinal ? p.final[0].name : 'Drop your Kling Motion Control output here'}</div>
+            </div>
+          </div>
+          ${hasFinal ? '<button class="btn btn-sm btn-green" onclick="event.stopPropagation();openFolder(\'final\')">Show</button>' : ''}
+        </div>
+        <div class="step-body">
+          ${!hasFinal ? renderDropZone('final', 'Drop final video from Kling', 'MP4, MOV, WEBM') : renderFilePreview('final', p.final)}
+        </div>
+      </div>
+    </div>
+  `;
+
+  // Setup drop zones
+  setupDropZones();
+}
+
+function renderFrameGrid() {
+  const frames = activeProject.frames.filter(f => !f.name.startsWith('SELECTED'));
+  const selected = activeProject.meta.selected_frame;
+  return `<div class="frame-grid">${frames.map(f => `
+    <div class="frame-card ${f.name === selected ? 'selected' : ''}"
+         onclick="selectFrame('${f.name}')">
+      <img src="/api/projects/${activeProjectId}/frame/${f.name}" loading="lazy" />
+      <div class="frame-card-label">${f.name === selected ? '✓ Selected' : f.name}</div>
+    </div>
+  `).join('')}</div>`;
+}
+
+function renderDropZone(stage, text, formats) {
+  return `
+    <div class="drop-zone" data-stage="${stage}" onclick="triggerUpload('${stage}')">
+      <div class="drop-zone-icon">↓</div>
+      <p>${text}</p>
+      <small>${formats}</small>
+    </div>
+    <input type="file" id="fileInput-${stage}" style="display:none"
+           onchange="handleFileSelect(event, '${stage}')" />
+  `;
+}
+
+function renderFilePreview(stage, files) {
+  return `<div class="preview-row">${files.map(f => {
+    const isImage = /\.(jpg|jpeg|png|webp)$/i.test(f.name);
+    const isVideo = /\.(mp4|mov|webm)$/i.test(f.name);
+    if (isImage) {
+      return `<img class="preview-thumb" src="/api/projects/${activeProjectId}/${stage}/${f.name}" />`;
+    }
+    return `<div class="file-item"><span class="file-item-icon">${isVideo ? '🎬' : '📄'}</span><span class="file-item-name">${f.name}</span><span class="file-item-size">${formatBytes(f.size)}</span></div>`;
+  }).join('')}</div>`;
+}
+
+function setupDropZones() {
+  document.querySelectorAll('.drop-zone').forEach(zone => {
+    const stage = zone.dataset.stage;
+    zone.addEventListener('dragover', (e) => { e.preventDefault(); zone.classList.add('dragover'); });
+    zone.addEventListener('dragleave', () => zone.classList.remove('dragover'));
+    zone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      zone.classList.remove('dragover');
+      if (e.dataTransfer.files.length) uploadFile(e.dataTransfer.files[0], stage);
+    });
+  });
+}
+
+// ── Actions ──────────────────────────────────────────────────────
+async function downloadReel(id) {
+  const pid = id || activeProjectId;
+  toast('Downloading reel...');
+  try {
+    await api(`/projects/${pid}/download`, { method: 'POST' });
+    toast('Download complete!', 'success');
+    await refreshProject();
+  } catch (e) {
+    toast('Download failed: ' + e.message, 'error');
+    await refreshProject();
+  }
+}
+
+async function extractFrames() {
+  toast('Extracting frames...');
+  try {
+    await api(`/projects/${activeProjectId}/extract-frames`, {
+      method: 'POST',
+      body: JSON.stringify({ mode: 'smart', count: 8 }),
+    });
+    toast('Frames extracted!', 'success');
+    await refreshProject();
+  } catch (e) {
+    toast('Extraction failed: ' + e.message, 'error');
+  }
+}
+
+async function selectFrame(name) {
+  try {
+    await api(`/projects/${activeProjectId}/select-frame`, {
+      method: 'POST',
+      body: JSON.stringify({ frame: name }),
+    });
+    toast('Frame selected');
+    await refreshProject();
+  } catch (e) {
+    toast(e.message, 'error');
+  }
+}
+
+async function openFrame() {
+  await api(`/projects/${activeProjectId}/open-frame`, { method: 'POST' });
+}
+
+async function openFolder(sub) {
+  await api(`/projects/${activeProjectId}/open-folder`, {
+    method: 'POST',
+    body: JSON.stringify({ subfolder: sub }),
+  });
+}
+
+function triggerUpload(stage) {
+  document.getElementById(`fileInput-${stage}`).click();
+}
+
+function handleFileSelect(event, stage) {
+  const file = event.target.files[0];
+  if (file) uploadFile(file, stage);
+}
+
+async function uploadFile(file, stage) {
+  const form = new FormData();
+  form.append('file', file);
+  try {
+    const res = await fetch(`/api/projects/${activeProjectId}/upload/${stage}`, {
+      method: 'POST',
+      body: form,
+    });
+    if (!res.ok) throw new Error('Upload failed');
+    toast(`${file.name} uploaded`, 'success');
+    await refreshProject();
+    await loadProjects();
+  } catch (e) {
+    toast(e.message, 'error');
+  }
+}
+
+async function deleteProject() {
+  if (!confirm('Delete this project and all files?')) return;
+  try {
+    await api(`/projects/${activeProjectId}`, { method: 'DELETE' });
+    activeProjectId = null;
+    activeProject = null;
+    document.getElementById('mainContent').innerHTML = `
+      <div class="empty-state">
+        <div class="empty-icon">◆</div>
+        <h2>No project selected</h2>
+        <p>Create a new project or select one from the sidebar.</p>
+      </div>`;
+    await loadProjects();
+    toast('Project deleted');
+  } catch (e) {
+    toast(e.message, 'error');
+  }
+}
+
+function toggleStep(header) {
+  const body = header.nextElementSibling;
+  if (body && body.classList.contains('step-body')) {
+    body.style.display = body.style.display === 'none' ? '' : 'none';
+  }
+}
+
+function esc(s) {
+  const d = document.createElement('div');
+  d.textContent = s || '';
+  return d.innerHTML;
+}
+
+// ── Init ─────────────────────────────────────────────────────────
+loadProjects();
+</script>
+</body>
+</html>
